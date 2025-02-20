@@ -120,7 +120,8 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
 		// * 不如业务层转换为直接存为unix timestamp （单位为s，对应redis）
 		String issueBeginTime = String.valueOf(convertDateTimeToEpochSecond(coupon.getIssueBeginTime()));
 		String issueEndTime = String.valueOf(convertDateTimeToEpochSecond(coupon.getIssueEndTime()));
-		String totalNum = coupon.getTotalNum().toString();
+		Integer leftNum = coupon.getTotalNum() - coupon.getIssueNum();
+		String totalNum = leftNum.toString();
 		String userLimit = coupon.getUserLimit().toString();
 		redisTemplate.execute(WRITE_COUPON_SCRIPT, List.of(key), issueBeginTime, issueEndTime, totalNum,
 				userLimit);
