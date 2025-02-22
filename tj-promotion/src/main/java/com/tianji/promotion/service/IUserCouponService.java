@@ -40,4 +40,8 @@ public interface IUserCouponService extends IService<UserCoupon> {
 	void refundCoupon(List<Long> userCouponIds);
 
 	List<String> queryDiscountRules(List<Long> userCouponIds);
+
+	void receiveCouponImplWithAnnotation(Long id);
+
+	void exchangeCouponWithAnnotation(String code);
 }

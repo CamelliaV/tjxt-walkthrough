@@ -60,14 +60,16 @@ public class UserCouponController {
 	@PostMapping("/{id}/receive")
 	public void receiveCoupon(@PathVariable("id") Long id) {
 		// userCouponService.receiveCoupon(id);
-		userCouponService.receiveCouponImplWithLua(id);
+//		userCouponService.receiveCouponImplWithLua(id);
+		userCouponService.receiveCouponImplWithAnnotation(id);
 	}
 
 	@ApiOperation("兑换优惠劵")
 	@PostMapping("/{code}/exchange")
 	public void exchangeCoupon(@PathVariable("code") String code) {
 		// userCouponService.exchangeCoupon(code);
-		userCouponService.exchangeCouponWithLua(code);
+//		userCouponService.exchangeCouponWithLua(code);
+		userCouponService.exchangeCouponWithAnnotation(code);
 	}
 
 	@ApiOperation("分页查询我的优惠劵")

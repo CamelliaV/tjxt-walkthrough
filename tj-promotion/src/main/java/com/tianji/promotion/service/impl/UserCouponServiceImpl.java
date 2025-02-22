@@ -5,6 +5,7 @@ import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.tianji.common.autoconfigure.mq.RabbitMqHelper;
+import com.tianji.common.autoconfigure.redisson.annotations.Lock;
 import com.tianji.common.constants.MqConstants;
 import com.tianji.common.domain.dto.PageDTO;
 import com.tianji.common.exceptions.BizIllegalException;
@@ -305,6 +306,107 @@ public class UserCouponServiceImpl extends ServiceImpl<UserCouponMapper, UserCou
 		return coupons.stream()
 				.map(c -> DiscountStrategy.getDiscount(c.getDiscountType()).getRule(c))
 				.collect(Collectors.toList());
+	}
+
+	@Override
+	@Lock(name = "#T(com.tianji.common.constants.PromotionConstants).COUPON_RECEIVE_REDIS_LOCK_PREFIX#T(com.tianji.common.utils.UserContext).getUser()")
+	public void receiveCouponImplWithAnnotation(Long id) {
+		// * 分布式锁防止个人刷单（或lua脚本保证操作原子性，无锁方案）
+		// * redis查询优惠劵信息
+		// * 没有查询mysql并放入
+		if (id == null) {
+			return;
+		}
+		Coupon coupon = queryCouponByCache(id);
+		boolean isFromRedis = coupon != null;
+		// * redis无数据
+		if (coupon == null) {
+			// * 查数据库
+			coupon = couponService.getById(id);
+		}
+		// * 校验优惠劵是否存在
+		if (coupon == null) {
+			throw new DbException("目标优惠劵不存在：" + id);
+		}
+		// * 如果不是从Redis获取，写入Redis重读
+		if (!isFromRedis) {
+			cacheCouponInfo(coupon);
+			coupon = queryCouponByCache(id);
+			if (coupon == null) {
+				throw new BizIllegalException("优惠劵领取失败");
+			}
+		}
+		// * 判断发放时间
+		LocalDateTime now = LocalDateTime.now();
+		if (now.isBefore(coupon.getIssueBeginTime()) || now.isAfter(coupon.getIssueEndTime())) {
+			throw new BizIllegalException("优惠劵不在发放时间内");
+		}
+		// * 判断库存
+		if (coupon.getTotalNum() <= 0) {
+			throw new BizIllegalException("优惠劵库存不足");
+		}
+		// * 统计用户已领取数量
+		String key = PromotionConstants.USER_COUPON_CACHE_PREFIX + id;
+		Long userId = UserContext.getUser();
+		// * 可以通过修改此处读取再校验更新为一句increment无锁
+		Object result = redisTemplate.opsForHash().get(key, userId.toString());
+		Integer receivedNum = 0;
+		// * redis有数据
+		if (result != null) {
+			receivedNum = Integer.parseInt(result.toString());
+		} else {
+			// * 如无数据COUNT返回0
+			receivedNum = lambdaQuery()
+					.eq(UserCoupon::getUserId, userId)
+					.eq(UserCoupon::getCouponId, id)
+					.count();
+		}
+		// * 校验单个用户限制领取数
+		if (receivedNum >= coupon.getUserLimit()) {
+			throw new BizIllegalException("用户领取已达上限");
+		}
+		// * 更新Redis 用户已领取数量与totalNum
+		redisTemplate.opsForHash().increment(key, userId.toString(), 1L + (result == null ? receivedNum : 0L));
+		String couponCacheKey = PromotionConstants.COUPON_CACHE_PREFIX + id;
+		// * 前面部分不加锁，可能出现超卖，需要校验结果
+		Long totalNum = redisTemplate.opsForHash().increment(couponCacheKey, "totalNum", -1L);
+		// * 推送消息至MQ
+		if (totalNum >= 0) {
+			UserCouponDTO dto = new UserCouponDTO();
+			dto.setCouponId(id);
+			dto.setUserId(userId);
+
+			rabbitMqHelper.send(MqConstants.Exchange.PROMOTION_EXCHANGE, MqConstants.Key.COUPON_RECEIVED, dto);
+		}
+	}
+
+	@Override
+	@Lock(name = "#T(com.tianji.common.constants.PromotionConstants).COUPON_EXCHANGE_REDIS_LOCK_PREFIX#T(com.tianji.common.utils.UserContext).getUser()")
+	/**
+	 * * 其实只用锁两行
+	 */
+	public void exchangeCouponWithAnnotation(String code) {
+		// * 解析兑换码
+		long id = CodeUtil.parseCode(code);
+		// * 查询兑换码
+		ExchangeCode exchangeCode = exchangeCodeService.getById(id);
+		// * 是否存在
+		if (exchangeCode == null) {
+			throw new DbException("目标兑换码不存在：" + id);
+		}
+		// * 判断是否兑换状态
+		// * 判断是否过期
+		LocalDateTime now = LocalDateTime.now();
+		if (exchangeCode.getStatus() != ExchangeCodeStatus.UNUSED || now.isAfter(exchangeCode.getExpiredTime())) {
+			throw new BizIllegalException("兑换码已使用或已过期");
+		}
+		// * 判断是否超出领取数量
+		// * 更新状态（优惠卷领取+1；用户卷新增记录）
+		Coupon coupon = couponService.getById(exchangeCode.getExchangeTargetId());
+		Long userId = UserContext.getUser();
+		// * 其实只有这两行要锁，可以单独抽出函数锁
+		IUserCouponService userCouponService = (IUserCouponService) AopContext.currentProxy();
+		userCouponService.checkAndCreateUserCouponWithCode(coupon, userId, exchangeCode.getId());
 	}
 
 	private void cacheCouponInfo(Coupon coupon) {
