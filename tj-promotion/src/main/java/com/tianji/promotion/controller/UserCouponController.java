@@ -60,8 +60,8 @@ public class UserCouponController {
 	@PostMapping("/{id}/receive")
 	public void receiveCoupon(@PathVariable("id") Long id) {
 		// userCouponService.receiveCoupon(id);
-//		userCouponService.receiveCouponImplWithLua(id);
-		userCouponService.receiveCouponImplWithAnnotation(id);
+		userCouponService.receiveCouponImplWithLua(id);
+//		userCouponService.receiveCouponImplWithAnnotation(id);
 	}
 
 	@ApiOperation("兑换优惠劵")

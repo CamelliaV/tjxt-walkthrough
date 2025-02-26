@@ -216,19 +216,28 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
 		if (CollUtils.isEmpty(courseInfos)) {
 			throw new BizIllegalException(TradeErrorInfo.COURSE_NOT_EXISTS);
 		}
+		List<OrderCourseVO> courses = BeanUtils.copyList(courseInfos, OrderCourseVO.class);
 		// 2.计算总价
 		int total = courseInfos.stream()
 				.mapToInt(CourseSimpleInfoDTO::getPrice)
 				.sum();
-		// TODO 3.计算折扣
-		int discountAmount = 0;
+		// * 3.计算折扣
+		List<OrderCourseDTO> orderCourseDTOList = courseInfos.stream().map(c -> {
+			OrderCourseDTO dto = new OrderCourseDTO();
+			dto.setPrice(c.getPrice());
+			dto.setId(c.getId());
+			dto.setCateId(c.getThirdCateId());
+			return dto;
+		}).collect(Collectors.toList());
+		List<CouponDiscountDTO> discountSolution = promotionClient.findDiscountSolution(orderCourseDTOList);
 		// 4.生成订单id
 		long orderId = IdWorker.getId();
 		// 5.组织返回
 		OrderConfirmVO vo = new OrderConfirmVO();
 		vo.setOrderId(orderId);
 		vo.setTotalAmount(total);
-		vo.setDiscountAmount(discountAmount);
+		vo.setDiscounts(discountSolution);
+		vo.setCourses(courses);
 		return vo;
 	}
 

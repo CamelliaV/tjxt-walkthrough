@@ -17,7 +17,7 @@ import java.util.List;
 @FeignClient(name = "promotion-service", fallbackFactory = PromotionClientFallback.class)
 public interface PromotionClient {
 	@ApiOperation("查询可用优惠方案优惠详情")
-	@PostMapping("/available")
+	@PostMapping("/user-coupons/available")
 	List<CouponDiscountDTO> findDiscountSolution(@RequestBody List<OrderCourseDTO> orderCourseDTOList);
 
 	@ApiOperation("根据券方案计算订单优惠明细")
@@ -25,15 +25,15 @@ public interface PromotionClient {
 	CouponDiscountDTO queryDiscountDetailByOrder(@RequestBody OrderCouponDTO orderCouponDTO);
 
 	@ApiOperation("核销指定优惠券")
-	@PutMapping("/use")
+	@PutMapping("/user-coupons/use")
 	void writeOffCoupon(@RequestParam("couponIds") List<Long> userCouponIds);
 
 	@ApiOperation("退还指定优惠券")
-	@PutMapping("/refund")
+	@PutMapping("/user-coupons/refund")
 	void refundCoupon(@RequestParam("couponIds") List<Long> userCouponIds);
 
 	@ApiOperation("根据优惠劵id集合查询优惠券规则集合")
-	@GetMapping("/rules")
+	@GetMapping("/user-coupons/rules")
 	List<String> queryDiscountRules(@RequestParam("couponIds") List<Long> userCouponIds);
 
 }
